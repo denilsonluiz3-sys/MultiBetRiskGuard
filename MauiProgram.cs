@@ -19,6 +19,9 @@ public static class MauiProgram
                 fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
             });
 
+        // Configure the native WebView before any browser page is created.
+        WebViewSecurity.ConfigureHandlers();
+
         builder.Services.AddSingleton<SpaPublicRegistrySource>();
         builder.Services.AddSingleton<TrustSecurityEngine>();
 
