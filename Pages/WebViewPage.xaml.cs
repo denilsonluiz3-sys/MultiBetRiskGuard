@@ -9,6 +9,16 @@ public partial class WebViewPage : ContentPage
     private bool _desktopUa;
     private bool _isNavigating;
 
+    private sealed record ImageSearchProvider(string Name, string UrlTemplate);
+
+    private static readonly ImageSearchProvider[] ImageSearchProviders =
+    {
+        new("Google Imagens", "https://www.google.com/search?tbm=isch&q={0}"),
+        new("Bing Imagens", "https://www.bing.com/images/search?q={0}"),
+        new("DuckDuckGo Imagens", "https://duckduckgo.com/?iax=images&ia=images&q={0}"),
+        new("Yahoo Imagens", "https://images.search.yahoo.com/search/images?p={0}")
+    };
+
     public WebViewPage(string url, string title = "Site")
     {
         InitializeComponent();
@@ -46,34 +56,12 @@ public partial class WebViewPage : ContentPage
         return base.OnBackButtonPressed();
     }
 
-    private void OnBack(object? sender, EventArgs e)
-    {
-        try { if (MainWebView.CanGoBack) MainWebView.GoBack(); } catch { }
-    }
-
-    private void OnForward(object? sender, EventArgs e)
-    {
-        try { if (MainWebView.CanGoForward) MainWebView.GoForward(); } catch { }
-    }
-
-    private void OnReload(object? sender, EventArgs e)
-    {
-        try { MainWebView.Reload(); } catch { }
-    }
-
-    private void OnHome(object? sender, EventArgs e)
-    {
-        if (!string.IsNullOrEmpty(_homeUrl))
-            NavigateTo(_homeUrl);
-    }
-
-    private async void OnClose(object? sender, EventArgs e)
-    {
-        try { await Navigation.PopAsync(); } catch { }
-    }
-
+    private void OnBack(object? sender, EventArgs e) { try { if (MainWebView.CanGoBack) MainWebView.GoBack(); } catch { } }
+    private void OnForward(object? sender, EventArgs e) { try { if (MainWebView.CanGoForward) MainWebView.GoForward(); } catch { } }
+    private void OnReload(object? sender, EventArgs e) { try { MainWebView.Reload(); } catch { } }
+    private void OnHome(object? sender, EventArgs e) { if (!string.IsNullOrEmpty(_homeUrl)) NavigateTo(_homeUrl); }
+    private async void OnClose(object? sender, EventArgs e) { try { await Navigation.PopAsync(); } catch { } }
     private void OnAddressCompleted(object? sender, EventArgs e) => NavigateFromAddressBar();
-
     private void OnGo(object? sender, EventArgs e) => NavigateFromAddressBar();
 
     private void NavigateFromAddressBar()
@@ -85,7 +73,6 @@ public partial class WebViewPage : ContentPage
                 _ = DisplayAlertAsync("URL bloqueada", err, "OK");
                 return;
             }
-
             NavigateTo(safe);
             AddressEntry.Unfocus();
         }
@@ -96,9 +83,7 @@ public partial class WebViewPage : ContentPage
     {
         try
         {
-            if (!UrlValidator.TryNormalize(url, out var safe, out _))
-                return;
-
+            if (!UrlValidator.TryNormalize(url, out var safe, out _)) return;
             SetCurrentUrl(safe);
             MainWebView.Source = safe;
         }
@@ -109,8 +94,6 @@ public partial class WebViewPage : ContentPage
     {
         try
         {
-            // Validate every navigation, not only URLs typed by the user.
-            // This also protects against redirects to local/private addresses.
             if (!UrlValidator.TryNormalize(e.Url, out var safe, out _))
             {
                 e.Cancel = true;
@@ -118,16 +101,12 @@ public partial class WebViewPage : ContentPage
                 LoadingProgress.IsVisible = false;
                 return;
             }
-
             _isNavigating = true;
             LoadingProgress.Progress = 0.15;
             LoadingProgress.IsVisible = true;
             SetCurrentUrl(safe);
         }
-        catch
-        {
-            e.Cancel = true;
-        }
+        catch { e.Cancel = true; }
     }
 
     private void OnNavigated(object? sender, WebNavigatedEventArgs e)
@@ -136,9 +115,7 @@ public partial class WebViewPage : ContentPage
         {
             _isNavigating = false;
             LoadingProgress.Progress = 1;
-            if (!string.IsNullOrEmpty(e.Url))
-                SetCurrentUrl(e.Url);
-
+            if (!string.IsNullOrEmpty(e.Url)) SetCurrentUrl(e.Url);
             Dispatcher.StartTimer(TimeSpan.FromMilliseconds(180), () =>
             {
                 LoadingProgress.IsVisible = false;
@@ -162,12 +139,12 @@ public partial class WebViewPage : ContentPage
             var choice = await DisplayActionSheetAsync(
                 "Navegador", "Cancelar", null,
                 _isNavigating ? "Parar carregamento" : "Recarregar",
+                "Pesquisar imagens",
                 "Abrir no Chrome / navegador do sistema",
                 _desktopUa ? "Modo mobile (UA)" : "Modo desktop (UA)",
                 "Copiar URL", "Compartilhar URL", "Limpar cookies deste app");
 
             var url = AddressEntry.Text ?? _homeUrl;
-
             switch (choice)
             {
                 case "Parar carregamento":
@@ -175,12 +152,10 @@ public partial class WebViewPage : ContentPage
                     _isNavigating = false;
                     LoadingProgress.IsVisible = false;
                     break;
-                case "Recarregar":
-                    OnReload(sender, e);
-                    break;
+                case "Recarregar": OnReload(sender, e); break;
+                case "Pesquisar imagens": await SearchImagesAsync(); break;
                 case "Abrir no Chrome / navegador do sistema":
-                    if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
-                        await Launcher.Default.OpenAsync(uri);
+                    if (Uri.TryCreate(url, UriKind.Absolute, out var uri)) await Launcher.Default.OpenAsync(uri);
                     break;
                 case "Modo desktop (UA)":
                 case "Modo mobile (UA)":
@@ -207,6 +182,31 @@ public partial class WebViewPage : ContentPage
         }
     }
 
+    private async Task SearchImagesAsync()
+    {
+        string? query = await DisplayPromptAsync(
+            "Pesquisa de imagens", "Digite o que deseja pesquisar:", "Pesquisar", "Cancelar",
+            "ex.: camisa do Corinthians", maxLength: 200, keyboard: Keyboard.Text);
+
+        if (string.IsNullOrWhiteSpace(query)) return;
+
+        string? selected = await DisplayActionSheetAsync(
+            "Escolha o provedor", "Cancelar", null, ImageSearchProviders.Select(p => p.Name).ToArray());
+
+        if (string.IsNullOrWhiteSpace(selected) || selected == "Cancelar") return;
+
+        var provider = ImageSearchProviders.FirstOrDefault(p => p.Name == selected);
+        if (provider == null) return;
+
+        string searchUrl = string.Format(provider.UrlTemplate, Uri.EscapeDataString(query.Trim()));
+        if (!UrlValidator.TryNormalize(searchUrl, out var safe, out var error))
+        {
+            await DisplayAlertAsync("Pesquisa bloqueada", error, "OK");
+            return;
+        }
+        NavigateTo(safe);
+    }
+
     private void ApplyUserAgent(bool desktop)
     {
 #if ANDROID
@@ -214,9 +214,7 @@ public partial class WebViewPage : ContentPage
         {
             if (MainWebView.Handler?.PlatformView is Android.Webkit.WebView aw)
             {
-                aw.Settings.UserAgentString = desktop
-                    ? WebViewSecurity.ChromeDesktopUa
-                    : WebViewSecurity.ChromeMobileUa;
+                aw.Settings.UserAgentString = desktop ? WebViewSecurity.ChromeDesktopUa : WebViewSecurity.ChromeMobileUa;
             }
         }
         catch { }
