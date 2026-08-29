@@ -109,13 +109,25 @@ public partial class WebViewPage : ContentPage
     {
         try
         {
+            // Validate every navigation, not only URLs typed by the user.
+            // This also protects against redirects to local/private addresses.
+            if (!UrlValidator.TryNormalize(e.Url, out var safe, out _))
+            {
+                e.Cancel = true;
+                _isNavigating = false;
+                LoadingProgress.IsVisible = false;
+                return;
+            }
+
             _isNavigating = true;
             LoadingProgress.Progress = 0.15;
             LoadingProgress.IsVisible = true;
-            if (!string.IsNullOrEmpty(e.Url))
-                SetCurrentUrl(e.Url);
+            SetCurrentUrl(safe);
         }
-        catch { }
+        catch
+        {
+            e.Cancel = true;
+        }
     }
 
     private void OnNavigated(object? sender, WebNavigatedEventArgs e)
