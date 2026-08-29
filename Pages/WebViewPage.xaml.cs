@@ -7,6 +7,7 @@ public partial class WebViewPage : ContentPage
     private readonly string _homeUrl;
     private readonly string _title;
     private bool _desktopUa;
+    private bool _isNavigating;
 
     public WebViewPage(string url, string title = "Site")
     {
@@ -19,6 +20,7 @@ public partial class WebViewPage : ContentPage
             Title = "Erro";
             _homeUrl = string.Empty;
             MainWebView.Source = null;
+            AddressEntry.Text = string.Empty;
             _ = DisplayAlertAsync("Bloqueado", err, "OK");
             return;
         }
@@ -26,7 +28,7 @@ public partial class WebViewPage : ContentPage
         _homeUrl = safe;
         TitleLabel.Text = title;
         Title = title;
-        UrlLabel.Text = safe;
+        SetCurrentUrl(safe);
         MainWebView.Source = safe;
     }
 
@@ -62,7 +64,7 @@ public partial class WebViewPage : ContentPage
     private void OnHome(object? sender, EventArgs e)
     {
         if (!string.IsNullOrEmpty(_homeUrl))
-            MainWebView.Source = _homeUrl;
+            NavigateTo(_homeUrl);
     }
 
     private async void OnClose(object? sender, EventArgs e)
@@ -70,14 +72,75 @@ public partial class WebViewPage : ContentPage
         try { await Navigation.PopAsync(); } catch { }
     }
 
+    private void OnAddressCompleted(object? sender, EventArgs e) => NavigateFromAddressBar();
+
+    private void OnGo(object? sender, EventArgs e) => NavigateFromAddressBar();
+
+    private void NavigateFromAddressBar()
+    {
+        try
+        {
+            if (!UrlValidator.TryNormalize(AddressEntry.Text, out var safe, out var err))
+            {
+                _ = DisplayAlertAsync("URL bloqueada", err, "OK");
+                return;
+            }
+
+            NavigateTo(safe);
+            AddressEntry.Unfocus();
+        }
+        catch { }
+    }
+
+    private void NavigateTo(string url)
+    {
+        try
+        {
+            if (!UrlValidator.TryNormalize(url, out var safe, out _))
+                return;
+
+            SetCurrentUrl(safe);
+            MainWebView.Source = safe;
+        }
+        catch { }
+    }
+
     private void OnNavigating(object? sender, WebNavigatingEventArgs e)
     {
-        try { if (!string.IsNullOrEmpty(e.Url)) UrlLabel.Text = e.Url; } catch { }
+        try
+        {
+            _isNavigating = true;
+            LoadingProgress.Progress = 0.15;
+            LoadingProgress.IsVisible = true;
+            if (!string.IsNullOrEmpty(e.Url))
+                SetCurrentUrl(e.Url);
+        }
+        catch { }
     }
 
     private void OnNavigated(object? sender, WebNavigatedEventArgs e)
     {
-        try { if (!string.IsNullOrEmpty(e.Url)) UrlLabel.Text = e.Url; } catch { }
+        try
+        {
+            _isNavigating = false;
+            LoadingProgress.Progress = 1;
+            if (!string.IsNullOrEmpty(e.Url))
+                SetCurrentUrl(e.Url);
+
+            Dispatcher.StartTimer(TimeSpan.FromMilliseconds(180), () =>
+            {
+                LoadingProgress.IsVisible = false;
+                LoadingProgress.Progress = 0;
+                return false;
+            });
+        }
+        catch { }
+    }
+
+    private void SetCurrentUrl(string url)
+    {
+        UrlLabel.Text = url;
+        AddressEntry.Text = url;
     }
 
     private async void OnMenu(object? sender, EventArgs e)
@@ -86,14 +149,23 @@ public partial class WebViewPage : ContentPage
         {
             var choice = await DisplayActionSheetAsync(
                 "Navegador", "Cancelar", null,
+                _isNavigating ? "Parar carregamento" : "Recarregar",
                 "Abrir no Chrome / navegador do sistema",
                 _desktopUa ? "Modo mobile (UA)" : "Modo desktop (UA)",
                 "Copiar URL", "Compartilhar URL", "Limpar cookies deste app");
 
-            var url = UrlLabel.Text ?? _homeUrl;
+            var url = AddressEntry.Text ?? _homeUrl;
 
             switch (choice)
             {
+                case "Parar carregamento":
+                    try { MainWebView.Source = null; } catch { }
+                    _isNavigating = false;
+                    LoadingProgress.IsVisible = false;
+                    break;
+                case "Recarregar":
+                    OnReload(sender, e);
+                    break;
                 case "Abrir no Chrome / navegador do sistema":
                     if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
                         await Launcher.Default.OpenAsync(uri);
