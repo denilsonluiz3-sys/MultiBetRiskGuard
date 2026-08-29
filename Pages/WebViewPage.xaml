@@ -4,7 +4,7 @@
              x:Class="MULTI_Bet_playing_Demo.Pages.WebViewPage"
              BackgroundColor="{DynamicResource Background}">
 
-    <Grid RowDefinitions="Auto,Auto,*">
+    <Grid RowDefinitions="Auto,Auto,Auto,*">
         <Grid ColumnDefinitions="*,Auto" BackgroundColor="{DynamicResource Surface}" Padding="8,4">
             <Label x:Name="TitleLabel" Text="Navegador" FontAttributes="Bold" FontSize="13"
                    TextColor="{DynamicResource TextPrimary}" VerticalOptions="Center" LineBreakMode="TailTruncation" />
@@ -12,7 +12,7 @@
                     FontSize="18" WidthRequest="40" HeightRequest="32" Padding="0" Grid.Column="1" />
         </Grid>
 
-        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto"
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto"
               BackgroundColor="{DynamicResource Surface}" Padding="4,2" ColumnSpacing="2">
             <Button Text="←" Clicked="OnBack" FontSize="16" HeightRequest="32" WidthRequest="40" Padding="0"
                     BackgroundColor="{DynamicResource Surface}" TextColor="{DynamicResource TextPrimary}"
@@ -26,13 +26,22 @@
             <Button Grid.Column="3" Text="⌂" Clicked="OnHome" FontSize="14" HeightRequest="32" WidthRequest="40" Padding="0"
                     BackgroundColor="{DynamicResource Surface}" TextColor="{DynamicResource TextPrimary}"
                     BorderColor="{DynamicResource Border}" BorderWidth="1" />
-            <Label x:Name="UrlLabel" Grid.Column="4" FontSize="10" TextColor="{DynamicResource TextSecondary}"
-                   VerticalOptions="Center" LineBreakMode="TailTruncation" Margin="6,0" />
-            <Button Grid.Column="5" Text="⋮" Clicked="OnMenu" FontSize="16" HeightRequest="32" WidthRequest="40" Padding="0"
+            <Entry x:Name="AddressEntry" Grid.Column="4" FontSize="11" TextColor="{DynamicResource TextPrimary}"
+                   Placeholder="Digite uma URL" PlaceholderColor="{DynamicResource TextSecondary}"
+                   BackgroundColor="{DynamicResource Background}" ClearButtonVisibility="WhileEditing"
+                   ReturnType="Go" Completed="OnAddressCompleted" Margin="4,0" />
+            <Button Grid.Column="5" Text="Go" Clicked="OnGo" FontSize="12" HeightRequest="32" WidthRequest="44" Padding="0"
+                    BackgroundColor="{DynamicResource Surface}" TextColor="{DynamicResource Accent}"
+                    BorderColor="{DynamicResource Border}" BorderWidth="1" />
+            <Button Grid.Column="6" Text="⋮" Clicked="OnMenu" FontSize="16" HeightRequest="32" WidthRequest="40" Padding="0"
                     BackgroundColor="{DynamicResource Surface}" TextColor="{DynamicResource TextPrimary}"
                     BorderColor="{DynamicResource Border}" BorderWidth="1" />
         </Grid>
 
-        <WebView x:Name="MainWebView" Grid.Row="2" Navigating="OnNavigating" Navigated="OnNavigated" />
+        <Grid Grid.Row="2" HeightRequest="2" BackgroundColor="{DynamicResource Surface}">
+            <ProgressBar x:Name="LoadingProgress" Progress="0" IsVisible="False" />
+        </Grid>
+
+        <WebView x:Name="MainWebView" Grid.Row="3" Navigating="OnNavigating" Navigated="OnNavigated" />
     </Grid>
 </ContentPage>
