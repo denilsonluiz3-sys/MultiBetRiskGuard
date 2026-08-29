@@ -1,15 +1,13 @@
 namespace MULTI_Bet_playing_Demo.Services;
 
 /// <summary>
-/// WebView compatível com sites reais.
-/// NÃO usa setSupportMultipleWindows(true) com a mesma WebView no OnCreateWindow —
-/// isso gera: "Parent WebView cannot host its own popup window".
+/// Hardened WebView configuration for the in-app browser.
+/// Security is defense-in-depth; remote sites remain untrusted content.
 /// </summary>
 public static class WebViewSecurity
 {
     public const string ChromeMobileUa =
         "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36";
-
     public const string ChromeDesktopUa =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36";
 
@@ -22,26 +20,25 @@ public static class WebViewSecurity
             {
                 var wv = handler.PlatformView;
                 if (wv?.Settings == null) return;
-
                 var s = wv.Settings;
+
                 s.JavaScriptEnabled = true;
                 s.DomStorageEnabled = true;
-                s.DatabaseEnabled = true;
+                s.DatabaseEnabled = false;
                 s.LoadsImagesAutomatically = true;
-                s.MediaPlaybackRequiresUserGesture = false;
+                s.MediaPlaybackRequiresUserGesture = true;
 
-                // Obrigatório false: Chromium proíbe a WebView hospedar o próprio popup
                 s.SetSupportMultipleWindows(false);
                 s.JavaScriptCanOpenWindowsAutomatically = false;
-
                 s.SetSupportZoom(true);
                 s.BuiltInZoomControls = true;
                 s.DisplayZoomControls = false;
                 s.UseWideViewPort = true;
                 s.LoadWithOverviewMode = true;
 
+                // Never allow local file/content origins to reach arbitrary files.
                 s.AllowFileAccess = false;
-                s.AllowContentAccess = true;
+                s.AllowContentAccess = false;
                 s.AllowFileAccessFromFileURLs = false;
                 s.AllowUniversalAccessFromFileURLs = false;
 
@@ -49,13 +46,11 @@ public static class WebViewSecurity
                     s.UserAgentString = ChromeMobileUa;
 
                 var cm = Android.Webkit.CookieManager.Instance;
-                if (cm != null)
-                {
-                    cm.SetAcceptCookie(true);
-                    cm.SetAcceptThirdPartyCookies(wv, true);
-                }
+                cm?.SetAcceptCookie(true);
+                cm?.SetAcceptThirdPartyCookies(wv, false);
 
                 wv.SetWebChromeClient(new MultiBetChromeClient());
+                wv.SetDownloadListener(new SafeDownloadListener());
             }
             catch { }
         });
@@ -78,36 +73,42 @@ public static class WebViewSecurity
 #if ANDROID
     sealed class MultiBetChromeClient : Android.Webkit.WebChromeClient
     {
-        public override bool OnCreateWindow(
-            Android.Webkit.WebView? view,
-            bool isDialog,
-            bool isUserGesture,
-            Android.OS.Message? resultMsg)
+        public override bool OnCreateWindow(Android.Webkit.WebView? view, bool isDialog, bool isUserGesture, Android.OS.Message? resultMsg)
         {
             try
             {
-                var hit = view?.GetHitTestResult();
-                var extra = hit?.Extra;
-                if (!string.IsNullOrEmpty(extra) &&
-                    (extra.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-                     extra.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
+                var extra = view?.GetHitTestResult()?.Extra;
+                if (!string.IsNullOrEmpty(extra) && UrlValidator.TryNormalize(extra, out var safe, out _))
                 {
-                    var intent = new Android.Content.Intent(Android.Content.Intent.ActionView,
-                        Android.Net.Uri.Parse(extra));
+                    var intent = new Android.Content.Intent(Android.Content.Intent.ActionView, Android.Net.Uri.Parse(safe));
                     intent.AddFlags(Android.Content.ActivityFlags.NewTask);
                     Android.App.Application.Context.StartActivity(intent);
                     return true;
                 }
             }
             catch { }
-
-            // Nunca transport.WebView = view (mesma instância) → crash
             return false;
         }
 
         public override void OnPermissionRequest(Android.Webkit.PermissionRequest? request)
         {
             try { request?.Deny(); } catch { }
+        }
+
+        public override bool OnGeolocationPermissionsShowPrompt(string? origin, Android.Webkit.GeolocationPermissions.ICallback? callback)
+        {
+            try { callback?.Invoke(origin, false, false); } catch { }
+            return true;
+        }
+    }
+
+    sealed class SafeDownloadListener : Java.Lang.Object, Android.Webkit.IDownloadListener
+    {
+        public void OnDownloadStart(string? url, string? userAgent, string? contentDisposition, string? mimetype, long contentLength)
+        {
+            // Downloads are deliberately not delegated automatically. This avoids
+            // silently handing untrusted URLs to external download handlers.
+            // A future download flow can add explicit user confirmation and type checks.
         }
     }
 #endif
