@@ -95,10 +95,9 @@ public static class WebViewSecurity
             try { request?.Deny(); } catch { }
         }
 
-        public override bool OnGeolocationPermissionsShowPrompt(string? origin, Android.Webkit.GeolocationPermissions.ICallback? callback)
+        public override void OnGeolocationPermissionsShowPrompt(string? origin, Android.Webkit.GeolocationPermissions.ICallback? callback)
         {
             try { callback?.Invoke(origin, false, false); } catch { }
-            return true;
         }
     }
 
@@ -108,7 +107,6 @@ public static class WebViewSecurity
         {
             // Downloads are deliberately not delegated automatically. This avoids
             // silently handing untrusted URLs to external download handlers.
-            // A future download flow can add explicit user confirmation and type checks.
         }
     }
 #endif
