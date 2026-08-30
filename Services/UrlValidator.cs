@@ -6,7 +6,7 @@ public static class UrlValidator
 {
     private static readonly HashSet<string> BlockedSchemes = new(StringComparer.OrdinalIgnoreCase)
     {
-        "javascript", "data", "file", "content", "about", "blob", "intent", "market", "android-app", "chrome", "chrome-extension"
+        "javascript", "data", "file", "content", "blob", "intent", "market", "android-app", "chrome", "chrome-extension"
     };
 
     public static bool TryNormalize(string? input, out string normalized, out string error)
@@ -16,6 +16,12 @@ public static class UrlValidator
         if (string.IsNullOrWhiteSpace(input)) { error = "URL vazia."; return false; }
 
         var raw = input.Trim();
+        if (raw.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = "about:blank";
+            return true;
+        }
+
         var schemePart = raw.Split(':', 2)[0];
         if (BlockedSchemes.Contains(schemePart)) { error = "Scheme de URL não permitido."; return false; }
         if (!raw.Contains("://", StringComparison.Ordinal)) raw = "https://" + raw;
@@ -43,8 +49,7 @@ public static class UrlValidator
 
         if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
         {
-            var b = address.GetAddressBytes();
-            var first = b[0]; var second = b[1];
+            var b = address.GetAddressBytes(); var first = b[0]; var second = b[1];
             return first == 10 || (first == 172 && second is >= 16 and <= 31) ||
                    (first == 192 && second == 168) || (first == 169 && second == 254) ||
                    first == 127 || first == 0 || first >= 224;
