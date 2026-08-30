@@ -27,14 +27,9 @@ public partial class WebViewPage : ContentPage
     {
         InitializeComponent();
         _title = title;
-        if (!UrlValidator.TryNormalize(url, out var safe, out var err))
-        {
-            TitleLabel.Text = "URL bloqueada"; Title = "Erro"; _homeUrl = string.Empty;
-            MainWebView.Source = null; AddressEntry.Text = string.Empty;
-            _ = DisplayAlertAsync("Bloqueado", err, "OK"); return;
-        }
-        _homeUrl = safe; TitleLabel.Text = title; Title = title;
-        SetCurrentUrl(safe); MainWebView.Source = safe;
+        TitleLabel.Text = title;
+        _homeUrl = url;
+        NavigateTo(url);
     }
 
     protected override bool OnBackButtonPressed()
@@ -42,6 +37,7 @@ public partial class WebViewPage : ContentPage
         try { if (MainWebView.CanGoBack) { MainWebView.GoBack(); return true; } } catch { }
         return base.OnBackButtonPressed();
     }
+
     private void OnBack(object? sender, EventArgs e) { try { if (MainWebView.CanGoBack) MainWebView.GoBack(); } catch { } }
     private void OnForward(object? sender, EventArgs e) { try { if (MainWebView.CanGoForward) MainWebView.GoForward(); } catch { } }
     private void OnReload(object? sender, EventArgs e) { try { MainWebView.Reload(); } catch { } }
@@ -52,25 +48,23 @@ public partial class WebViewPage : ContentPage
 
     private void NavigateFromAddressBar()
     {
-        if (!UrlValidator.TryNormalize(AddressEntry.Text, out var safe, out var err)) { _ = DisplayAlertAsync("URL bloqueada", err, "OK"); return; }
-        NavigateTo(safe); AddressEntry.Unfocus();
+        var input = AddressEntry.Text?.Trim();
+        if (string.IsNullOrWhiteSpace(input)) return;
+        if (!UrlValidator.TryNormalize(input, out var safe, out var err)) { _ = DisplayAlertAsync("URL bloqueada", err, "OK"); return; }
+        NavigateTo(safe);
+        AddressEntry.Unfocus();
     }
 
     private void NavigateTo(string url)
     {
-        if (!UrlValidator.TryNormalize(url, out var safe, out _)) return;
-        try { SetCurrentUrl(safe); MainWebView.Source = safe; } catch { }
+        try { if (!UrlValidator.TryNormalize(url, out var safe, out _)) return; SetCurrentUrl(safe); MainWebView.Source = safe; } catch { }
     }
 
     private void OnNavigating(object? sender, WebNavigatingEventArgs e)
     {
         try
         {
-            // about:blank is permitted only as the WebView's inert internal blank page.
-            if (string.Equals(e.Url, "about:blank", StringComparison.OrdinalIgnoreCase))
-            {
-                _isNavigating = false; LoadingProgress.IsVisible = false; return;
-            }
+            if (e.Url.Equals("about:blank", StringComparison.OrdinalIgnoreCase)) { _isNavigating = true; LoadingProgress.Progress = 0.15; LoadingProgress.IsVisible = true; return; }
             if (!UrlValidator.TryNormalize(e.Url, out var safe, out _)) { e.Cancel = true; _isNavigating = false; LoadingProgress.IsVisible = false; return; }
             _isNavigating = true; LoadingProgress.Progress = 0.15; LoadingProgress.IsVisible = true; SetCurrentUrl(safe);
         }
@@ -101,7 +95,7 @@ public partial class WebViewPage : ContentPage
             var url = AddressEntry.Text ?? _homeUrl;
             switch (choice)
             {
-                case "Parar carregamento": try { MainWebView.StopLoading(); } catch { } _isNavigating = false; LoadingProgress.IsVisible = false; break;
+                case "Parar carregamento": StopLoading(); break;
                 case "Recarregar": OnReload(sender, e); break;
                 case "Pesquisar imagens": await SearchImagesAsync(); break;
                 case "Pesquisa reversa por URL de imagem": await ReverseImageSearchAsync(); break;
@@ -115,29 +109,41 @@ public partial class WebViewPage : ContentPage
         catch (Exception ex) { try { await DisplayAlertAsync("Erro", ex.Message, "OK"); } catch { } }
     }
 
+    private void StopLoading()
+    {
+        try
+        {
+#if ANDROID
+            if (MainWebView.Handler?.PlatformView is Android.Webkit.WebView androidWebView) androidWebView.StopLoading();
+#endif
+        }
+        catch { }
+        _isNavigating = false;
+        LoadingProgress.IsVisible = false;
+    }
+
     private async Task SearchImagesAsync()
     {
-        var query = await DisplayPromptAsync("Pesquisa de imagens", "Digite o que deseja pesquisar:", "Pesquisar", "Cancelar", "ex.: GPT", 200, Keyboard.Text);
+        var query = await DisplayPromptAsync("Pesquisa de imagens", "Digite o que deseja pesquisar:", "Pesquisar", "Cancelar", "ex.: camisa do Corinthians", maxLength: 200, keyboard: Keyboard.Text);
         if (string.IsNullOrWhiteSpace(query)) return;
         var selected = await DisplayActionSheetAsync("Escolha o provedor", "Cancelar", null, ImageSearchProviders.Select(p => p.Name).ToArray());
+        if (string.IsNullOrWhiteSpace(selected) || selected == "Cancelar") return;
         var provider = ImageSearchProviders.FirstOrDefault(p => p.Name == selected);
         if (provider == null) return;
-        NavigateTo(string.Format(provider.UrlTemplate, Uri.EscapeDataString(query.Trim())));
+        var searchUrl = string.Format(provider.UrlTemplate, Uri.EscapeDataString(query.Trim()));
+        if (!UrlValidator.TryNormalize(searchUrl, out var safe, out var error)) { await DisplayAlertAsync("Pesquisa bloqueada", error, "OK"); return; }
+        NavigateTo(safe);
     }
 
     private async Task ReverseImageSearchAsync()
     {
-        var imageUrl = await DisplayPromptAsync("Pesquisa reversa", "Cole a URL pública da imagem:", "Pesquisar", "Cancelar", "https://...", 1000, Keyboard.Url);
+        var imageUrl = await DisplayPromptAsync("Pesquisa reversa", "Informe a URL pública da imagem:", "Pesquisar", "Cancelar", "https://...", maxLength: 2000, keyboard: Keyboard.Url);
         if (string.IsNullOrWhiteSpace(imageUrl)) return;
-        if (!UrlValidator.TryNormalize(imageUrl.Trim(), out var safeImage, out var error)) { await DisplayAlertAsync("URL bloqueada", error, "OK"); return; }
-        var selected = await DisplayActionSheetAsync("Escolha o provedor", "Cancelar", null, "Google Lens", "Yandex Imagens");
-        string? searchUrl = selected switch
-        {
-            "Google Lens" => $"https://lens.google.com/uploadbyurl?url={Uri.EscapeDataString(safeImage)}",
-            "Yandex Imagens" => $"https://yandex.com/images/search?rpt=imageview&url={Uri.EscapeDataString(safeImage)}",
-            _ => null
-        };
-        if (searchUrl != null) NavigateTo(searchUrl);
+        if (!UrlValidator.TryNormalize(imageUrl, out var safeImage, out var error)) { await DisplayAlertAsync("Imagem bloqueada", error, "OK"); return; }
+        var encoded = Uri.EscapeDataString(safeImage);
+        var selected = await DisplayActionSheetAsync("Escolha o mecanismo", "Cancelar", null, "Google Lens", "Yandex Imagens");
+        if (selected == "Google Lens") NavigateTo("https://lens.google.com/uploadbyurl?url=" + encoded);
+        else if (selected == "Yandex Imagens") NavigateTo("https://yandex.com/images/search?rpt=imageview&url=" + encoded);
     }
 
     private void ApplyUserAgent(bool desktop)
