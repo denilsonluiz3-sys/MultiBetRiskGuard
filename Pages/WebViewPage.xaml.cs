@@ -10,7 +10,6 @@ public partial class WebViewPage : ContentPage
     private bool _isNavigating;
 
     private sealed record ImageSearchProvider(string Name, string UrlTemplate);
-
     private static readonly ImageSearchProvider[] ImageSearchProviders =
     {
         new("Google Imagens", "https://www.google.com/search?tbm=isch&q={0}"),
@@ -126,11 +125,7 @@ public partial class WebViewPage : ContentPage
         catch { }
     }
 
-    private void SetCurrentUrl(string url)
-    {
-        UrlLabel.Text = url;
-        AddressEntry.Text = url;
-    }
+    private void SetCurrentUrl(string url) => AddressEntry.Text = url;
 
     private async void OnMenu(object? sender, EventArgs e)
     {
@@ -155,7 +150,7 @@ public partial class WebViewPage : ContentPage
                 case "Recarregar": OnReload(sender, e); break;
                 case "Pesquisar imagens": await SearchImagesAsync(); break;
                 case "Abrir no Chrome / navegador do sistema":
-                    if (Uri.TryCreate(url, UriKind.Absolute, out var uri)) await Launcher.Default.OpenAsync(uri);
+                    if (UrlValidator.TryNormalize(url, out var safe, out _)) await Launcher.Default.OpenAsync(new Uri(safe));
                     break;
                 case "Modo desktop (UA)":
                 case "Modo mobile (UA)":
@@ -184,20 +179,12 @@ public partial class WebViewPage : ContentPage
 
     private async Task SearchImagesAsync()
     {
-        string? query = await DisplayPromptAsync(
-            "Pesquisa de imagens", "Digite o que deseja pesquisar:", "Pesquisar", "Cancelar",
-            "ex.: camisa do Corinthians", maxLength: 200, keyboard: Keyboard.Text);
-
+        string? query = await DisplayPromptAsync("Pesquisa de imagens", "Digite o que deseja pesquisar:", "Pesquisar", "Cancelar", "ex.: camisa do Corinthians", maxLength: 200, keyboard: Keyboard.Text);
         if (string.IsNullOrWhiteSpace(query)) return;
-
-        string? selected = await DisplayActionSheetAsync(
-            "Escolha o provedor", "Cancelar", null, ImageSearchProviders.Select(p => p.Name).ToArray());
-
+        string? selected = await DisplayActionSheetAsync("Escolha o provedor", "Cancelar", null, ImageSearchProviders.Select(p => p.Name).ToArray());
         if (string.IsNullOrWhiteSpace(selected) || selected == "Cancelar") return;
-
         var provider = ImageSearchProviders.FirstOrDefault(p => p.Name == selected);
         if (provider == null) return;
-
         string searchUrl = string.Format(provider.UrlTemplate, Uri.EscapeDataString(query.Trim()));
         if (!UrlValidator.TryNormalize(searchUrl, out var safe, out var error))
         {
@@ -213,9 +200,7 @@ public partial class WebViewPage : ContentPage
         try
         {
             if (MainWebView.Handler?.PlatformView is Android.Webkit.WebView aw)
-            {
                 aw.Settings.UserAgentString = desktop ? WebViewSecurity.ChromeDesktopUa : WebViewSecurity.ChromeMobileUa;
-            }
         }
         catch { }
 #endif
